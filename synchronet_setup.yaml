@@ -1,0 +1,250 @@
+---
+# Ansible playbook for building and installing Synchronet BBS onto a CentOS/Redhat based system.
+# 03392019 Robert Stinnett (dmxrob) -- bbs.homelabber.net [ssh, web, rlogin, nntp]
+# Home Repo Located at https://github.com/robertstinnett/synchronet
+#
+
+- name:  Setup Synchronet BBS on CentOS 7 and above
+  hosts: all
+
+# Port variables. It is STRONGLY recommended that you do not change these except when absolutely necessary.
+# By default, below, we are setting the BBS SSH to port 22 and the OS SSH to 2222.
+
+  vars:  
+    bbs_runuser: dmxrob
+    bbs_root: /sbbs
+    os_ssh_port: 2222
+    bbs_ssh_port: 22
+    bbs_telnet_port:  23
+    bbs_rlogin_port:  513
+    bbs_ftp_port: 21
+    bbs_http_port: 80
+    bbs_https_port:  443
+    bbs_nntp_port:  119
+    bbs_gopher_port:  70
+    bbs_irc_port: 6667
+    bbs_finger_port: 79
+    bbs_instant_messaging_port:  11
+    bbs_incoming_instant_messaging_port: 18
+    bbs_websocket_telnet_port: 1123
+    bbs_websocket_telnet_tls_port: 11235
+    bbs_systat_udp_port: 11
+
+# Setup some messaging
+
+    post_install: |
+      Synchronet is now installed, but now must be conifgured.  Log into Linux as the account you setup to run the BBS which
+      is {{ bbs_runuser }} and run the following command:  /sbbs/exec/scfg
+
+
+# Install packages
+
+  tasks:
+  - name: Install packages needed for Synchronet to Build from Source
+    yum: name={{ item }} state=present
+    with_items:
+      - zip
+      - unzip
+      - wget
+      - cvs
+      - perl
+      - patch
+      - nspr-devel
+      - ncurses-devel
+      - gcc-c++
+    state: present
+    become_user: root
+
+
+  - name: Install extra, necessary and  handy packages
+    yum: name={{ item }} state=present
+    with_items:
+        - nano
+        - lynx
+        - curl
+        - git
+        - iotop
+        - tar
+        - policycoreutils-python
+    state: present
+    become_user: root
+
+# Create user, directory and build SBBS
+
+  - name: Add the BBS user with a primary group of 'wheel' (sudo root group)
+    user:
+      name: "{{ bbs_runuser }}"
+      comment: Synchronet BBS Account
+      group: wheel
+      state: present
+
+  - name: Create SBBS Directory
+    file: 
+      path: "{{ bbs_root }}"
+      state: directory
+      mode: 0755
+      owner: "{{ bbs_runuser }}"
+
+  - name: Download Makefile from Synchronet CVS Repo
+    get_url:
+      url: http://cvs.synchro.net/cgi-bin/viewcvs.cgi/*checkout*/install/GNUmakefile
+      dest: "{{ bbs_root }}"
+      mode: 0444
+
+  - name: Build SBBS 
+    make:
+      chdir: /sbbs
+      target: install
+      params:
+        SYMLINK: 1
+    become: true
+    become_user: "{{ bbs_runuser }}"
+
+  - name: Setup alternate SSH port
+    lineinfile:
+      dest: "/etc/ssh/sshd_config"
+      regexp: "^Port"
+      line: "Port {{ os_ssh_port }}"
+    notify: "Restart sshd"
+
+  # Open ports in our firewall
+  # By default, I am not opening the SMTP port as I do not want to deal with providing Internet  e-mail, which is nothing but a headache.
+  # If you want to enable SMTP, just follow the examples below.
+  # 
+  - name: Open Server OS SSH Port
+    firewalld: "port={{ os_ssh_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
+
+  - name: Open BBS SSH Port
+    firewalld: "port={{ bbs_ssh_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
+
+  - name: Open BBS Telnet Port
+    firewalld: "port={{ bbs_telnet_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
+
+  - name: Open BBS Rlogin Port
+    firewalld: "port={{ bbs_rlogin_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
+
+  - name: Open BBS FTP Port
+    firewalld: "port={{ bbs_ftp_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
+
+  - name: Open BBS HTTP Port
+    firewalld: "port={{ bbs_http_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
+
+  - name: Open BBS HTTPS Port
+    firewalld: "port={{ bbs_https_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
+
+  - name: Open BBS NNTP Port
+    firewalld: "port={{ bbs_nntp_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
+
+  - name: Open BBS Gopher Port
+    firewalld: "port={{ bbs_gopher_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
+
+  - name: Open BBS IRC Port
+    firewalld: "port={{ bbs_irc_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
+
+  - name: Open BBS Finger Port
+    firewalld: "port={{ bbs_finger_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
+
+  - name: Open BBS Intra-BBS Instant Messaging Port
+    firewalld: "port={{ bbs_instant_messaging_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
+
+  - name: Open BBS Intra-BBS Incoming Instant Messaging Port
+    firewalld: "port={{ bbs_incoming_instant_messaging_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
+
+  - name: Open BBS Websocket Telnet Port
+    firewalld: "port={{ bbs_websocket_telnet_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
+
+  - name: Open BBS Websocket TElnet TLS Port
+    firewalld: "port={{ bbs_websocket_telnet_tls_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
+
+  - name: Open BBS SYSTAT UDP Port
+    firewalld: "port={{ bbs_systat_udp_port }}/udp zone=public permanent=true state=enabled immediate=yes"
+
+# Now configure the ports under SELinux
+
+  - name:  Configure OS SSH Port for SELinux
+    seport:
+      ports: "{{ os_ssh_port }}"
+      proto: tcp
+      setype: ssh_port_t
+      state: present
+
+  - name:  Configure BBS SSH Port for SELinux
+    seport:
+      ports: "{{ bbs_ssh_port }}"
+      proto: tcp
+      setype: ssh_port_t
+      state: present
+
+
+# Update BBS account profile to export SBBCTRL path
+  - name: Adding SBBSCTRL in the bashrc files
+    lineinfile: 
+      dest:  /root/.bashrc
+      line:  'export SBBSCTRL={{ bbs_root }}/ctrl'
+      insertafter:  'EOF'
+      regexp:  'export SBBSCTRL={{ bbs_root }}/ctrl'
+      state:  present
+
+  - name:  Update bind retries parameter
+    lineinfile: 
+      path:  "{{ bbs_root }}/ctrl/sbbs.ini"
+      regexp:  'BindRetryCount ='
+      line:  'BindRetryCount = 15'
+      state: present
+
+  - name: Update SSH Port parameter  
+    lineinfile:
+      path:  "{{ bbs_root }}/ctrl/sbbs.ini"
+      regexp:  'SSHPort ='
+      line:  'SSHPort = {{ bbs_ssh_port }}'
+
+  - name: Update Telnet Port parameter  
+    lineinfile:
+      path:  "{{ bbs_root }}/ctrl/sbbs.ini"
+      regexp:  'TelnetPort ='
+      line:  'TelnetPort = {{ bbs_telnet_port }}'
+
+  - name: Update Rlogin Port parameter  
+    lineinfile:
+      path:  "{{ bbs_root }}/ctrl/sbbs.ini"
+      regexp:  'RLoginPort ='
+      line:  'RLoginPort = {{ bbs_rlogin_port }}'
+
+  - name: Update User Account for Running BBS  
+    lineinfile:
+      path:  "{{ bbs_root }}/ctrl/sbbs.ini"
+      regexp:  'User ='
+      line:  'User = {{ bbs_runuser }}'
+
+
+# Install termcap and terminfo files (see http://wiki.synchro.net/install:nix)
+
+  - name:  Download terminfo file
+    get_url:
+      url: "http://cvs.synchro.net/cgi-bin/viewcvs.cgi/*checkout*/install/terminfo"
+      dest: "{{ bbs_root }}"
+      mode: 0555
+
+  - name: Run tic command to import terminfo file
+    shell: "tic {{ bbs_root }}/terminfo"
+
+  - name: Update SBBS Config ExternalTermANSI  
+    lineinfile:
+      path:  "{{ bbs_root }}/ctrl/sbbs.ini"
+      regexp:  'ExternalTermANSI ='
+      line:  'ExternalTermANSI = ansi-bbs'
+      state:  present
+
+
+
+
+
+
+  - name: display post install message
+    debug: msg={{ post_install.split('\n') }}
+
+# Handlers below this line
+
+  handlers:
+    - name: Restart sshd
+      service: name=sshd state=restarted
