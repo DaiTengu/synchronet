@@ -1,6 +1,6 @@
 ---
 # Ansible playbook for building and installing Synchronet BBS onto a CentOS/Redhat based system.
-# 03392019 Robert Stinnett (dmxrob) -- bbs.homelabber.net [ssh, web, rlogin, nntp]
+# 04272019 Robert Stinnett (dmxrob) -- bbs.homelabber.net [ssh, web, rlogin, nntp]
 # Home Repo Located at https://github.com/robertstinnett/synchronet
 #
 
@@ -21,6 +21,7 @@
     bbs_http_port: 80
     bbs_https_port:  443
     bbs_nntp_port:  119
+    bbs_nntps_port: 563
     bbs_gopher_port:  70
     bbs_irc_port: 6667
     bbs_finger_port: 79
@@ -29,12 +30,16 @@
     bbs_websocket_telnet_port: 1123
     bbs_websocket_telnet_tls_port: 11235
     bbs_systat_udp_port: 11
+    bbs_binkp_port:  24554
+    bbs_msp_port:  18    # Both TCP and UDP
 
 # Setup some messaging
 
     post_install: |
       Synchronet is now installed, but now must be conifgured.  Log into Linux as the account you setup to run the BBS which
       is {{ bbs_runuser }} and run the following command:  /sbbs/exec/scfg
+
+      When you are ready to start the BBS up, enter the following command as root:  systemctl start sbbs
 
 
 # Install packages
@@ -97,6 +102,7 @@
       target: install
       params:
         SYMLINK: 1
+        DOSEMU: 1
     become: true
     become_user: "{{ bbs_runuser }}"
 
@@ -135,6 +141,9 @@
   - name: Open BBS NNTP Port
     firewalld: "port={{ bbs_nntp_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
 
+  - name: Open BBS NNTPS Port
+    firewalld: "port={{ bbs_nntps_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
+
   - name: Open BBS Gopher Port
     firewalld: "port={{ bbs_gopher_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
 
@@ -159,6 +168,15 @@
   - name: Open BBS SYSTAT UDP Port
     firewalld: "port={{ bbs_systat_udp_port }}/udp zone=public permanent=true state=enabled immediate=yes"
 
+  - name: Open BBS BinkP Port
+    firewalld: "port={{ bbs_binkp_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
+
+  - name: Open BBS MSP UDP Port
+    firewalld: "port={{ bbs_msp_port }}/udp zone=public permanent=true state=enabled immediate=yes"
+
+  - name: Open BBS MSP TCP Port
+    firewalld: "port={{ bbs_msp_port }}/tcp zone=public permanent=true state=enabled immediate=yes"
+
 # Now configure the ports under SELinux
 
   - name:  Configure OS SSH Port for SELinux
@@ -179,7 +197,7 @@
 # Update BBS account profile to export SBBCTRL path
   - name: Adding SBBSCTRL in the bashrc files
     lineinfile: 
-      dest:  /root/.bashrc
+      dest:  "/home/{{ bbs_runuser }}/.bashrc"
       line:  'export SBBSCTRL={{ bbs_root }}/ctrl'
       insertafter:  'EOF'
       regexp:  'export SBBSCTRL={{ bbs_root }}/ctrl'
@@ -235,7 +253,17 @@
       line:  'ExternalTermANSI = ansi-bbs'
       state:  present
 
+# Setup SBBS to run daemonized, plus add to startup routine.
 
+
+  - name:  Download SBBS Init File
+    get_url:
+      url: "http://cvs.synchro.net/cgi-bin/viewcvs.cgi/*checkout*/install/init.d/sbbs"
+      dest: "/etc/init.d"
+      mode: 0755
+
+  - name: Add SBBS to automatic startup.
+    shell: "chkconfig --add sbbs"
 
 
 
