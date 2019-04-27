@@ -1,7 +1,7 @@
-# synchronet #
+# Synchronet BBS Linux Scripts #
 Various scripts for [Synchronet BBS](https://www.synchronet.net) running under Linux
 
-# Maintained by #
+## Maintained by ##
 Robert Stinnett (dmxrob)
 [ssh/telnet/nntp] homelabber.net
 
